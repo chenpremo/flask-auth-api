@@ -1,11 +1,12 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
+import os
 import sqlite3
 import bcrypt
 import base64
 
 app = Flask(__name__)
 
-# 数据库初始化
+# 初始化数据库
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -47,5 +48,44 @@ def signup():
     return jsonify({"message": "Account successfully created", "user": {"user_id": user_id, "nickname": user_id}}), 200
 
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# **2. GET /users/{user_id}**
+@app.route('/users/<user_id>', methods=['GET'])
+def get_user(user_id):
+    auth = request.headers.get('Authorization')
+    if not auth or not auth.startswith('Basic '):
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    try:
+        auth_type, auth_credentials = auth.split(' ')
+        decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
+        provided_user_id, provided_password = decoded_credentials.split(':')
+    except Exception as e:
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    if provided_user_id != user_id:
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({"message": "No User found"}), 404
+
+    user_id, password, nickname, comment = user
+    return jsonify({
+        "message": "User details by user_id",
+        "user": {
+            "user_id": user_id,
+            "nickname": nickname if nickname else user_id,
+            "comment": comment if comment else ''
+        }
+    }), 200
+
+
+# **3. 监听 PORT 端口**
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
