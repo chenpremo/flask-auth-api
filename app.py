@@ -6,7 +6,7 @@ import base64
 
 app = Flask(__name__)
 
-# 初始化数据库
+# 数据库初始化
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -22,6 +22,7 @@ def init_db():
     conn.close()
 
 init_db()
+
 
 # **1. POST /signup**
 @app.route('/signup', methods=['POST'])
@@ -59,10 +60,7 @@ def get_user(user_id):
         auth_type, auth_credentials = auth.split(' ')
         decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
         provided_user_id, provided_password = decoded_credentials.split(':')
-    except Exception as e:
-        return jsonify({"message": "Authentication Failed"}), 401
-
-    if provided_user_id != user_id:
+    except Exception:
         return jsonify({"message": "Authentication Failed"}), 401
 
     conn = sqlite3.connect('database.db')
@@ -85,7 +83,53 @@ def get_user(user_id):
     }), 200
 
 
-# **3. 监听 PORT 端口**
+# **3. PATCH /users/{user_id}**
+@app.route('/users/<user_id>', methods=['PATCH'])
+def update_user(user_id):
+    auth = request.headers.get('Authorization')
+    if not auth or not auth.startswith('Basic '):
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    data = request.json
+    nickname = data.get('nickname')
+    comment = data.get('comment')
+
+    if not nickname and not comment:
+        return jsonify({"message": "User updation failed", "cause": "required nickname or comment"}), 400
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET nickname = ?, comment = ? WHERE user_id = ?', (nickname, comment, user_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "User successfully updated", "user": {"nickname": nickname, "comment": comment}}), 200
+
+
+# **4. POST /close**
+@app.route('/close', methods=['POST'])
+def close_account():
+    auth = request.headers.get('Authorization')
+    if not auth or not auth.startswith('Basic '):
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    try:
+        auth_type, auth_credentials = auth.split(' ')
+        decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
+        user_id, password = decoded_credentials.split(':')
+    except Exception:
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Account and user successfully removed"}), 200
+
+
+# 监听端口
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
