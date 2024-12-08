@@ -23,7 +23,6 @@ def init_db():
 
 init_db()
 
-
 # **1. POST /signup**
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -37,12 +36,15 @@ def signup():
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
     try:
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect('database.db', timeout=2)  # 增加超时，防止sqlite卡住
         cursor = conn.cursor()
         cursor.execute('INSERT INTO users (user_id, password, nickname) VALUES (?, ?, ?)', (user_id, hashed_password, user_id))
         conn.commit()
     except sqlite3.IntegrityError:
         return jsonify({"message": "Account creation failed", "cause": "already same user_id is used"}), 400
+    except Exception as e:
+        print(f"Signup Error: {e}")
+        return jsonify({"message": "Server error"}), 500
     finally:
         conn.close()
 
@@ -60,7 +62,11 @@ def get_user(user_id):
         auth_type, auth_credentials = auth.split(' ')
         decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
         provided_user_id, provided_password = decoded_credentials.split(':')
-    except Exception:
+    except Exception as e:
+        print(f"Auth error: {e}")
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    if provided_user_id != user_id:
         return jsonify({"message": "Authentication Failed"}), 401
 
     conn = sqlite3.connect('database.db')
@@ -90,6 +96,17 @@ def update_user(user_id):
     if not auth or not auth.startswith('Basic '):
         return jsonify({"message": "Authentication Failed"}), 401
 
+    try:
+        auth_type, auth_credentials = auth.split(' ')
+        decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
+        provided_user_id, provided_password = decoded_credentials.split(':')
+    except Exception as e:
+        print(f"Auth error: {e}")
+        return jsonify({"message": "Authentication Failed"}), 401
+
+    if provided_user_id != user_id:
+        return jsonify({"message": "No Permission for Update"}), 403
+
     data = request.json
     nickname = data.get('nickname')
     comment = data.get('comment')
@@ -117,7 +134,8 @@ def close_account():
         auth_type, auth_credentials = auth.split(' ')
         decoded_credentials = base64.b64decode(auth_credentials).decode('utf-8')
         user_id, password = decoded_credentials.split(':')
-    except Exception:
+    except Exception as e:
+        print(f"Auth error: {e}")
         return jsonify({"message": "Authentication Failed"}), 401
 
     conn = sqlite3.connect('database.db')
